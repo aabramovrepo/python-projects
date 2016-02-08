@@ -1,0 +1,319 @@
+#
+# Alexey Abramov <alexey.abramov@continental-corporation.com>
+#
+# The current code implements the RANSAC algorithm for finding a clothoid model
+#
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+
+
+def build_clothoid_model(start_distance, final_distance, offset, yaw_angle, c0, c1):
+    """ Build a clothoid with a constant step
+    :param start_distance:  lookahead distance for the clothoid
+    :param offset:          lateral offset
+    :param yaw_angle:       yaw angle of the line
+    :param c0:              curvature
+    :param c1:              curvature rate
+    :return clothoid_x:     list with X clothoid point coordinates
+    :return clothoid_y:     list with Y clothoid point coordinates
+    """
+
+    clothoid_x = []
+    clothoid_y = []
+
+    for x in range(int(start_distance), int(final_distance)):
+
+        y = offset + x*yaw_angle + (c0*x*x*0.5 + c1*x*x*x/6.0)
+
+        clothoid_x.append(x)
+        clothoid_y.append(y)
+
+    return clothoid_x, clothoid_y
+
+
+def find_line_model(x, y, yaw_angle, c0, c1):
+
+    m = yaw_angle + c0*x + c1*x*x/2.0
+    c = y - m*x
+
+    return m, c
+
+
+def get_clothoid_y(x, offset, yaw_angle, c0, c1):
+    """ Build a clothoid with a constant step
+    :param start_distance:  lookahead distance for the clothoid
+    :param offset:          lateral offset
+    :param yaw_angle:       yaw angle of the line
+    :param c0:              curvature
+    :param c1:              curvature rate
+    :return clothoid_x:     list with X clothoid point coordinates
+    :return clothoid_y:     list with Y clothoid point coordinates
+    """
+
+    return offset + x*yaw_angle + (c0*x*x*0.5 + c1*x*x*x/6.0)
+
+
+def regular_linear_least_squares(points):
+
+    x_fl = np.asarray(points[:,0])
+    y_fl = np.asarray(points[:,1])
+
+    # build basis functions for the linear least squares
+    x1 = np.ones([x_fl.size, 1])
+    x2 = x_fl
+    x3 = x_fl*x_fl/2
+    x4 = x_fl*x_fl*x_fl/6
+
+    v1 = np.reshape(x1, (len(x_fl), 1))
+    v2 = np.reshape(x2, (len(x_fl), 1))
+    v3 = np.reshape(x3, (len(x_fl), 1))
+    v4 = np.reshape(x4, (len(x_fl), 1))
+
+    x_lsq = np.hstack((v1, v2, v3, v4))
+    y_lsq = np.reshape(y_fl, (len(y_fl), 1))
+
+    # get the least squares solution
+    least_squares = np.linalg.lstsq(x_lsq, y_lsq)[0]
+
+    return least_squares
+
+
+def ransac_plot(n, points_x, points_y, least_squares, final=False, x_in=(), y_in=(), picked_points=(), m1=0., c1 = 0.):
+
+    fname = "output/figure_" + str(n) + ".png"
+    line_width = 1.
+    line_color = '#0080ff'
+
+    if final:
+        fname = "output/final.png"
+        line_width = 3.
+        line_color = '#ff0000'
+
+    # coordinate grid for plotting
+    grid = [-25, 25, -5, 155]
+
+    # display both
+    plt.figure("Clothoid model", figsize=(15., 15.))
+
+    # camera's origin
+    plt.plot(0, -1.17, 'gs')
+    plt.axis(grid)
+
+    plt.plot(points_y, points_x, marker='o', label='Input points', color='#00cc00', linestyle='None', alpha=0.4)
+
+    plt.grid(b=True, which='major', color='0.75', linestyle='--')
+    #plt.plot(cloth_left_y, cloth_left_x, linestyle='-', color='green')
+
+    if not final:
+        plt.plot(y_in, x_in, marker='o', label='Inliers', linestyle='None', color='#ff0000', alpha=0.6)
+
+    print ''
+    print 'model offset = ', least_squares[0,0]
+    print 'model heading = ', least_squares[1,0]
+    print 'model C0 = ', least_squares[2,0]
+    print 'model C1 = ', least_squares[3,0]
+    print ''
+
+    cloth_lsq_x, cloth_lsq_y = build_clothoid_model(0., 150., least_squares[0,0], least_squares[1,0], least_squares[2,0], least_squares[3,0])
+    plt.plot(cloth_lsq_y, cloth_lsq_x, linestyle='-', color=line_color, linewidth=line_width)
+
+    # draw points picked for the modeling
+    if not final:
+        plt.plot(picked_points[:,1], picked_points[:,0], marker='o', label='Picked points', color='#0000cc', linestyle='None', alpha=0.6)
+
+    #x = np.array([-20,20])
+    #plt.plot(m1*x + c1, x, 'r', label='Line model', color=line_color, linewidth=line_width)
+
+    plt.xticks([i for i in range(-25, 25, 2)])
+    plt.yticks([i for i in range(-5, 155, 5)])
+
+    plt.savefig(fname)
+    plt.close()
+
+
+def main():
+
+    ransac_iterations = 20
+    ransac_threshold = 3.
+    ransac_ratio = 0.8
+
+    outliers_ratio = 0.3
+
+    n_inputs = 1
+    n_outputs = 1
+
+    distance = 150.
+    offset = -1.8
+    yaw_angle = 0.
+    c0 = 0.002
+    c1 = -1e-6
+
+    # generate sparse input data
+    cloth_left_x, cloth_left_y = build_clothoid_model(0., distance, offset, yaw_angle, c0, c1)
+    cloth_left_x2, cloth_left_y2 = build_clothoid_model(0., distance, offset-10, yaw_angle, c0, c1)
+
+    cloth_left_x += cloth_left_x2
+    cloth_left_y += cloth_left_y2
+
+    n_samples = len(cloth_left_x)
+    print 'n_samples = ', n_samples
+
+    x = np.array(cloth_left_x).reshape(len(cloth_left_x), 1)
+    y = np.array(cloth_left_y).reshape(len(cloth_left_y), 1)
+
+    # add a little gaussian noise
+    x_noise = x + np.random.normal(size=x.shape)
+    y_noise = y + np.random.normal(size=y.shape)
+
+    # add some outliers to the point set
+    n_outliers = outliers_ratio*n_samples
+    indices = np.arange(x_noise.shape[0])
+    np.random.shuffle(indices)
+    outlier_indices = indices[:n_outliers]
+
+    # add noise to lateral offsets (y)
+    y_noise[outlier_indices] += 10*(np.random.normal(size=(n_outliers,n_outputs) ))**2
+
+    data = np.hstack( (x_noise,y_noise) )
+
+    ratio = 0.
+    model = ()
+
+    # perform RANSAC iterations
+    for it in range(ransac_iterations):
+
+        print 'Ransac step = ', it
+        n = 3
+
+        all_indices = np.arange(x_noise.shape[0])
+        np.random.shuffle(all_indices)
+
+        indices_1 = all_indices[:n]
+        indices_2 = all_indices[n:]
+
+        maybe_points = data[indices_1,:]
+        test_points = data[indices_2,:]
+
+        # estimate a model for the picked points
+        lsq_model = regular_linear_least_squares(maybe_points)
+
+        lsq_model[1.0] = 0.
+
+        lsq_model[3.0] = 0.
+
+        x_list = []
+        y_list = []
+        num = 0.
+
+        # test all other points against the model
+        for ind in range(test_points.shape[0]):
+
+            x0 = test_points[ind,0]
+            y0 = test_points[ind,1]
+
+            # get points from the found model
+            #cloth_lsq_x, cloth_lsq_y = build_clothoid_model(0., 150., lsq_model[0,0], lsq_model[1,0], lsq_model[2,0], lsq_model[3,0])
+
+            y1 = get_clothoid_y(x0, lsq_model[0,0], lsq_model[1,0], lsq_model[2,0], lsq_model[3,0])
+
+            m1, c1 = find_line_model(x0, y1, lsq_model[1,0], lsq_model[2,0], lsq_model[3,0])
+
+
+
+
+
+#            fname = "output/figure_" + str(it) + '_' + str(ind) + ".png"
+#            line_width = 1.
+#            line_color = '#0080ff'
+
+            # coordinate grid for plotting
+#            grid = [-25, 25, -5, 155]
+
+            # display both
+#            plt.figure("Clothoid model", figsize=(15., 15.))
+
+            # camera's origin
+#            plt.plot(0, -1.17, 'gs')
+#            plt.axis(grid)
+
+#            plt.plot(y_noise, x_noise, marker='o', label='Input points', color='#00cc00', linestyle='None', alpha=0.4)
+
+#            plt.grid(b=True, which='major', color='0.75', linestyle='--')
+
+            #plt.plot(y_inliers, x_inliers, marker='o', label='Inliers', linestyle='None', color='#ff0000', alpha=0.6)
+
+#            cloth_lsq_x, cloth_lsq_y = build_clothoid_model(0., 150., lsq_model[0,0], lsq_model[1,0], lsq_model[2,0], lsq_model[3,0])
+#            plt.plot(cloth_lsq_y, cloth_lsq_x, linestyle='-', color=line_color, linewidth=line_width)
+
+            # draw points picked for the modeling
+#            plt.plot(maybe_points[:,1], maybe_points[:,0], marker='o', label='Picked points', color='#0000cc', linestyle='None', alpha=0.6)
+
+#            x = np.array([0,150])
+#            plt.plot(m1*x + c1, x, 'r', color='#ff6633', linewidth=line_width)
+
+
+            # draw the point under consideration
+#            plt.plot(y0, x0, 'ro')
+
+#            plt.xticks([i for i in range(-40, 40, 2)])
+#            plt.yticks([i for i in range(-5, 155, 5)])
+
+#            plt.savefig(fname)
+#            plt.close()
+
+
+
+
+
+            dist = abs(y1 - y0)
+
+            # find the shortest distance from point to the model
+            # for this we trace model points => try to find a better solution of less complexity
+            #dist = 1e6
+
+            #for i in range(len(cloth_lsq_x)):
+
+            #    d = math.sqrt((x0 - cloth_lsq_x[i])**2 + (y0 - cloth_lsq_y[i])**2)
+
+            #    if d < dist:
+            #        dist = d
+
+            # check whether it's inlier or not
+            if dist < ransac_threshold:
+                x_list.append(x0)
+                y_list.append(y0)
+                num += 1
+
+        x_inliers = np.array(x_list)
+        y_inliers = np.array(y_list)
+
+        # in case a new model is better - cache it
+        if num/float(n_samples) > ratio:
+            ratio = num/float(n_samples)
+            model = lsq_model
+
+        print '  inlier ratio = ', num/float(n_samples)
+
+        ransac_plot(it, x_noise, y_noise, lsq_model, False, x_inliers, y_inliers, maybe_points, m1, c1)
+
+        # we are done in case we have enough inliers
+        if num > n_samples*ransac_ratio:
+            print 'The model is found !'
+            break
+
+
+    # plot the final model
+    #ransac_plot(0, x_noise,y_noise, model, True)
+
+    print ''
+    print 'Final model:'
+    print ''
+    print '  ratio = ', ratio
+    print '  model = ', model
+
+
+if __name__ == '__main__':
+    main()
