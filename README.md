@@ -4,14 +4,6 @@ My python projects
 
 ## Kd_Tree
 
-* The Surround 360 rendering software requires either Linux or Mac OS X
-
-* The essential dependencies of the Surround 360 rendering software are:
-  * CMake
-  * gflags
-  * glog
-  * OpenCV 3.0+
-
 * Kd_Tree.py -- 2-dimensional Kd tree
 * Kd_Tree_3D.py -- 3-dimensional Kd tree
 
