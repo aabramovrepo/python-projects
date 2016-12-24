@@ -4,6 +4,9 @@ My python projects
 
 ## Kd_Tree
 
+* Kd_Tree.py -- 2-dimensional Kd tree
+* Kd_Tree_3D.py -- 3-dimensional Kd tree
+
 https://salzis.wordpress.com/2014/06/28/kd-tree-and-nearest-neighbor-nn-search-2d-case/
 
 ## RANSAC
