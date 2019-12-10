@@ -33,10 +33,6 @@ Hovewer, it is actually not the original RANSAC. Looking on that page at the fig
 
 https://salzis.wordpress.com/2014/05/01/convex-hull-how-to-tell-whether-a-point-is-inside-or-outside/
 
-## dense_disparity_segments
-
-This project was a part of my PhD in Göttingen. The goal is to incorporate linked stereo segments for estimation of disparity for weakly textured objects.
-
 ## particle_filter
 
 https://salzis.wordpress.com/2015/05/25/particle-filters-with-python/
